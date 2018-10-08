@@ -1,0 +1,34 @@
+#!/usr/bin/python -u
+
+"""
+Dead Simple Logger (C) 2018 Public Domain :D
+
+Usage: log command args
+
+Runs command as usual but saves a copy of the command and its (standard) output
+to $PWD/command.date.time
+"""
+
+import sys
+import time
+from string import letters, digits
+from subprocess import PIPE, Popen, call
+from os.path import basename
+
+if not sys.argv[1:]: # no arguments
+    print "usage: {} program args...".format(sys.argv[0])
+    sys.exit(1)
+
+outfn = basename(sys.argv[1]) + ".out." + time.strftime("%Y%m%d.%H%M%S")
+
+proc = Popen(sys.argv[1:], stdout=PIPE, stdin = sys.stdin, stderr = sys.stderr)
+
+out = open(outfn, "a", 0) # unbuffered
+out.write("# "+" ".join(sys.argv[1:]) + "\n")
+
+for line in iter(proc.stdout.readline, b''):
+    print line,
+    out.write(line)
+    
+sys.exit(proc.returncode)
+

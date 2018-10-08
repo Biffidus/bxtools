@@ -1,0 +1,76 @@
+#!/usr/bin/env python
+
+"""
+quick'n'dirty curses-based UI for SearchSploit (C) 2018 Public Domain :D
+
+Usage: as for searchsploit, then use cursor keys to navigate the list and
+       (v)iew, (c)opy/(s)ave or (q)uit. (save will copy exploit to $PWD)
+
+Note: RES_KEY, EXP_KEY tend to change from time to time, you may have to
+      inspect `searchsploit -j` output to find out the correct values.
+"""
+
+import sys, curses, json
+from subprocess import PIPE, Popen, call
+
+# json structure seems to change from version to version...
+#RES_KEY, EXP_KEY = "RESULTS", "Exploit"        # Kali 2017.2
+#RES_KEY, EXP_KEY = "RESULTS", "Exploit Title"  # Kali 2018.1
+RES_KEY, EXP_KEY = "RESULTS_EXPLOIT", "Title"   # kali rolling 20180808
+
+if not sys.argv[1:]: # no arguments
+    sys.exit(call(["searchsploit"])) # run with no args
+# get search results
+search  = ["searchsploit", "-j", "--exclude=/dos/"] + sys.argv[1:]
+proc    = Popen(search, stdout=PIPE)
+results = "".join(proc.stdout).decode('ascii', 'ignore')
+results = results.replace('\\', '\\\\') # edb contains unescaped backslashes
+results = json.loads(results, strict=False).get(RES_KEY, [])
+if proc.returncode or not (0 < len(results) < 999):
+    print 0 if proc.returncode else len(results),"results:", " ".join(search)
+    sys.exit(proc.returncode)
+
+lines = sorted(results, key=lambda x:x[EXP_KEY])
+lsize = len(lines)
+idlen = max(len(line["EDB-ID"]) for line in lines)
+for line in lines:
+    line["Desc"] = "{:>{}} {} ({}/{})".format(line["EDB-ID"], idlen, line[EXP_KEY],
+                                              line["Platform"], line["Type"])
+
+def main(screen):
+    offset, select = 0, 0
+    curses.curs_set(0)
+    while True:
+        # bounds checking
+        h, w = screen.getmaxyx()
+        h -= 1 # leave room for footer
+        select = max(0, min(select, lsize - 1))
+        offset = max(0, select-h+1, min(offset, select, lsize-h))
+        # draw screen
+        screen.clear()
+        for i, line in enumerate(lines[offset:offset+h]):
+            screen.insstr(i,0,line["Desc"].ljust(w), curses.A_REVERSE if i+offset == select else 0)
+        screen.insstr(h, 0, " searchsploit {} ### {}/{} {} ".format(" ".join(search[2:]),
+                      select+1, lsize, "(v)iew (c)opy (q)uit").center(w),curses.A_REVERSE)
+        # get input 
+        k = screen.getch()
+        if k in [ord('q'), 27]: # quit
+            return
+        elif k in [ord('v'), ord('\n')]: # view exploit
+            curses.endwin()
+            call(["less", lines[select]["Path"]])
+            screen.refresh()
+        elif k in [ord('s'), ord('c')]: # copy exploit
+            call(["cp", lines[select]["Path"], "."])
+            screen.insstr(select - offset, 0,
+                 "copied {}".format(lines[select]["Path"]).center(w), curses.A_REVERSE)
+            screen.getch()
+        else: # navigate
+            select += {curses.KEY_UP: -1,
+                       curses.KEY_DOWN: 1,
+                       curses.KEY_PPAGE: -h,
+                       curses.KEY_NPAGE: h,
+                       curses.KEY_HOME: -offset,
+                       curses.KEY_END: lsize}.get(k,0)
+
+curses.wrapper(main)
