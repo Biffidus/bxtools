@@ -10,8 +10,8 @@ to $PWD/command.date.time
 """
 
 import sys
-import time
-from string import letters, digits
+from time import ctime, time
+from re import sub
 from subprocess import PIPE, Popen, call
 from os.path import basename
 
@@ -19,16 +19,25 @@ if not sys.argv[1:]: # no arguments
     print "usage: {} program args...".format(sys.argv[0])
     sys.exit(1)
 
-outfn = basename(sys.argv[1]) + ".out." + time.strftime("%Y%m%d.%H%M%S")
+outfn = "_".join([basename(sys.argv[1])] + sys.argv[2:])
+outfn = "{}.{}.txt".format(sub(r"[^\w\-\.]+", "_", outfn), int(time()))
 
 proc = Popen(sys.argv[1:], stdout=PIPE, stdin = sys.stdin, stderr = sys.stderr)
 
+print "# logging to:", outfn
+start = time()
+
 out = open(outfn, "a", 0) # unbuffered
-out.write("# "+" ".join(sys.argv[1:]) + "\n")
+out.write("# {}\n".format(ctime(start)))
+out.write("# {}\n".format(" ".join(sys.argv[1:])))
 
 for line in iter(proc.stdout.readline, b''):
     print line,
     out.write(line)
-    
+
+end = time()
+out.write("# {}\n".format(ctime(end)))
+out.write("# {} seconds elapsed\n".format(end - start))
+
 sys.exit(proc.returncode)
 
