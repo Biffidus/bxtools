@@ -92,6 +92,9 @@ int main(int argc, char **argv)
       die("execvp");
 
     default: // parent
+      if (setraw(STDIN_FILENO) == -1)
+        die("setraw");
+
       while (1)
       {
         fd_set fds;
